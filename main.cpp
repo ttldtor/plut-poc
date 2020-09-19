@@ -2,8 +2,10 @@
 #include <functional>
 #include <iostream>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <vector>
+//#include <syncstream>
 
 template<typename T>
 struct IdGenerator {
@@ -66,14 +68,12 @@ struct Console {
     std::vector<CharType> buffer;
 };
 
-int main() {
+void handlerTest() {
     Handler<void(int)> h{};
 
-    auto id1 = h += [](int i) {std::cout << i << "\n";};
-    h += [](int i) {std::cout << i * 2 << "\n";};
-    h += [](int i) {std::cout << i + 42 << "\n";};
-
-    std::cout << "Hello, World!" << std::endl;
+    auto id1 = h += [](int i) {std::cout << "tid:" << std::this_thread::get_id() << " " << i << "\n";};
+    h += [](int i) {std::cout << "tid:" << std::this_thread::get_id() << " " << i * 2 << "\n";};
+    h += [](int i) {std::cout << "tid:" << std::this_thread::get_id() << " " << i + 42 << "\n";};
 
     h(1);
 
@@ -82,6 +82,49 @@ int main() {
     std::cout << "\n";
 
     h(2);
+
+    std::atomic<bool> stop = false;
+    //std::osyncstream scout(std::cout);
+
+    auto t0 = std::thread([&h]{
+      std::cout << "tid:" << std::this_thread::get_id() << "+++" << std::endl;
+
+      for (int i = 1; i < 11; i++) {
+          h += [i](int j) {std::cout << "tid:" << std::this_thread::get_id() << " " << i + j << "\n";};
+      }
+    });
+
+    auto t1 = std::thread([&h, &stop]{
+      while (!stop) {
+          h(1);
+
+          std::this_thread::sleep_for(std::chrono::milliseconds(17));
+      }
+    });
+
+    auto t2 = std::thread([&h, &stop]{
+      while (!stop) {
+          h(2);
+
+          std::this_thread::sleep_for(std::chrono::milliseconds(23));
+      }
+    });
+
+    auto timeout = 30; //sec
+    while (timeout --> 0) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    stop = true;
+
+    t0.join();
+    t1.join();
+    t2.join();
+}
+
+int main(int argc, char* argv[]) {
+    if (argc > 1 && std::string(argv[1]) == "test") {
+        handlerTest();
+    }
 
     return 0;
 }
